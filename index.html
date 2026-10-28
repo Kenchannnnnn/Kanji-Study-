@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kanji N5-N1</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Noto+Sans+JP:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{font-family:'Poppins',sans-serif;box-sizing:border-box;margin:0;padding:0}
+body{background:#0f172a;color:#f1f5f9;min-height:100vh;padding:16px}
+.container{max-width:700px;margin:0 auto}
+h1{text-align:center;font-size:24px}
+.sub{text-align:center;color:#94a3b8;margin-bottom:16px;font-size:14px}
+.level-tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;padding-bottom:4px}
+.level-tabs button{flex:1;min-width:70px;padding:10px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;font-weight:700;cursor:pointer;white-space:nowrap}
+.level-tabs button.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+.card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:16px;margin-bottom:12px}
+.kanji-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px}
+.k-item{background:#0f172a;border:1px solid #334155;border-radius:12px;padding:10px 4px;text-align:center;cursor:pointer;position:relative}
+.k-item .k{font-family:'Noto Sans JP',sans-serif;font-size:28px;font-weight:700}
+.k-item .arti{font-size:11px;color:#94a3b8;height:28px;overflow:hidden}
+.k-item.hafal{border-color:#22c55e;background:#052e16}
+.k-item.hafal .k{color:#22c55e}
+.k-item.hafal::after{content:'✓';position:absolute;top:4px;right:6px;color:#22c55e;font-weight:700}
+#detail{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:99;padding:16px}
+#detailBox{background:#1e293b;border:1px solid #334155;border-radius:20px;padding:24px;width:100%;max-width:400px;text-align:center}
+#detailBox .big{font-family:'Noto Sans JP',sans-serif;font-size:80px;font-weight:700}
+.badge{display:inline-block;background:#3b82f6;color:#fff;padding:2px 10px;border-radius:20px;font-size:12px;margin:2px}
+.btn{padding:12px 18px;border-radius:12px;border:none;font-weight:700;cursor:pointer;margin:4px}
+.btn-primary{background:#3b82f6;color:#fff}
+.btn-green{background:#22c55e;color:#fff}
+.btn-ghost{background:#334155;color:#fff}
+.loading{text-align:center;color:#94a3b8;padding:30px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>漢字 Kanji N5 - N1</h1>
+  <p class="sub">List lengkap ±2000 kanji, data dari kanjiapi.dev</p>
+
+  <div class="level-tabs" id="levelTabs">
+    <button data-level="n5" class="active" onclick="gantiLevel('n5')">N5</button>
+    <button data-level="n4" onclick="gantiLevel('n4')">N4</button>
+    <button data-level="n3" onclick="gantiLevel('n3')">N3</button>
+    <button data-level="n2" onclick="gantiLevel('n2')">N2</button>
+    <button data-level="n1" onclick="gantiLevel('n1')">N1</button>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;font-size:14px"><span id="judulLevel">JLPT N5</span><span id="jumlah">0 kanji</span></div>
+    <div style="font-size:13px;color:#94a3b8;margin-top:4px">Klik kanji buat liat detail & tandain hafal</div>
+  </div>
+
+  <div class="kanji-grid" id="grid">
+    <div class="loading" style="grid-column:1/-1">Loading kanji...</div>
+  </div>
+</div>
+
+<div id="detail" onclick="tutupDetail(event)">
+  <div id="detailBox">
+    <div class="big" id="dKanji">日</div>
+    <div style="font-size:20px;font-weight:700;margin:8px 0" id="dArti"></div>
+    <div style="margin:10px 0">
+      <div><span class="badge">Onyomi</span> <span id="dOn"></span></div>
+      <div><span class="badge">Kunyomi</span> <span id="dKun"></span></div>
+    </div>
+    <div style="font-size:13px;color:#94a3b8" id="dContoh"></div>
+    <div style="margin-top:16px">
+      <button class="btn btn-green" id="btnHafal" onclick="tandaiHafal()">Tandai Hafal</button>
+      <button class="btn btn-ghost" onclick="tutupDetail()">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let levelAktif='n5';
+let dataLevel={}; // n5: [ {kanji, ...detail} ]
+let hafal = JSON.parse(localStorage.getItem('kanjiHafalV2')||'[]');
+let kanjiDipilih=null;
+
+async function gantiLevel(lv){
+  levelAktif=lv;
+  document.querySelectorAll('#levelTabs button').forEach(b=>b.classList.toggle('active', b.dataset.level===lv));
+  document.getElementById('judulLevel').innerText='JLPT '+lv.toUpperCase();
+  if(dataLevel[lv]){
+    renderGrid(dataLevel[lv]);
+  } else {
+    document.getElementById('grid').innerHTML='<div class="loading" style="grid-column:1/-1">Loading kanji '+lv.toUpperCase()+'...</div>';
+    try{
+      let res = await fetch(`https://kanjiapi.dev/v1/kanji/jlpt-${lv}`);
+      let listKanji = await res.json(); // array of kanji chars
+      // ambil detail 100 pertama dulu biar cepet, sisanya lazy
+      // tapi kita ambil semua detailnya paralel (bisa 1000+ request, jadi batch)
+      let details=[];
+      // ambil 50 pertama cepat, sisanya tetap ditampilkan nama doang dulu
+      for(let i=0;i<listKanji.length;i++){
+        let k=listKanji[i];
+        try{
+          let r2 = await fetch(`https://kanjiapi.dev/v1/kanji/${encodeURIComponent(k)}`);
+          let d = await r2.json();
+          details.push(d);
+        }catch(e){ details.push({kanji:k, meanings:['-'], on_readings:[], kun_readings:[]}); }
+        if(i%20===0){
+          document.getElementById('jumlah').innerText=`${i+1} / ${listKanji.length} dimuat...`;
+          renderGrid(details);
+        }
+      }
+      dataLevel[lv]=details;
+      renderGrid(details);
+    }catch(e){
+      document.getElementById('grid').innerHTML='<div class="loading" style="grid-column:1/-1">Gagal load. Cek internet ya.</div>';
+    }
+  }
+}
+
+function renderGrid(list){
+  document.getElementById('jumlah').innerText=`${list.length} kanji`;
+  let grid=document.getElementById('grid');
+  grid.innerHTML=list.map(d=>{
+    let isHafal=hafal.includes(d.kanji);
+    let arti=(d.meanings && d.meanings[0])||'-';
+    return `<div class="k-item ${isHafal?'hafal':''}" onclick="bukaDetail('${d.kanji}')">
+      <div class="k">${d.kanji}</div>
+      <div class="arti">${arti}</div>
+    </div>`;
+  }).join('');
+}
+
+async function bukaDetail(k){
+  kanjiDipilih=k;
+  let d=null;
+  // cari di cache level aktif
+  if(dataLevel[levelAktif]) d=dataLevel[levelAktif].find(x=>x.kanji===k);
+  if(!d){
+    let r=await fetch(`https://kanjiapi.dev/v1/kanji/${encodeURIComponent(k)}`);
+    d=await r.json();
+  }
+  document.getElementById('dKanji').innerText=d.kanji;
+  document.getElementById('dArti').innerText=(d.meanings||[]).join(', ');
+  document.getElementById('dOn').innerText=(d.on_readings||[]).join(', ')||'-';
+  document.getElementById('dKun').innerText=(d.kun_readings||[]).join(', ')||'-';
+  document.getElementById('dContoh').innerText='Grade: '+(d.grade||'-')+' | JLPT: '+(d.jlpt||'-');
+  document.getElementById('btnHafal').innerText = hafal.includes(k) ? 'Udah Hafal ✓ (klik buat batal)' : 'Tandai Hafal';
+  document.getElementById('detail').style.display='flex';
+}
+function tutupDetail(e){
+  if(!e || e.target.id==='detail') document.getElementById('detail').style.display='none';
+}
+function tandaiHafal(){
+  if(!kanjiDipilih) return;
+  let i=hafal.indexOf(kanjiDipilih);
+  if(i>=0) hafal.splice(i,1); else hafal.push(kanjiDipilih);
+  localStorage.setItem('kanjiHafalV2', JSON.stringify(hafal));
+  bukaDetail(kanjiDipilih);
+  renderGrid(dataLevel[levelAktif]);
+}
+
+// load N5 pertama kali
+gantiLevel('n5');
+</script>
+</body>
+  </html>
